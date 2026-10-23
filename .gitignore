@@ -56,3 +56,6 @@ desktop.ini
 # Alternative package manager lockfiles. Keep package-lock.json when npm is used.
 pnpm-lock.yaml
 yarn.lock
+
+# npm pack artifacts
+*.tgz

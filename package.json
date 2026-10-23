@@ -1,6 +1,6 @@
 {
   "name": "njau-cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": false,
   "description": "Agent-friendly CLI for Nanjing Agricultural University (NJAU) web services.",
   "type": "module",

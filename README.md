@@ -1,6 +1,8 @@
 # NJAU-CLI · 南京农业大学校园服务命令行
 
 [![Node.js >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](package.json)
+[![npm](https://img.shields.io/npm/v/njau-cli)](https://www.npmjs.com/package/njau-cli)
+[![CI](https://github.com/Weichenleeeee123/njau-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Weichenleeeee123/njau-cli/actions/workflows/ci.yml)
 [![License MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 `njau-cli` 是面向南京农业大学网页服务的 agent-friendly CLI：把课表、成绩、考试、空教室、通知、办事入口整理成稳定命令。默认输出结构化 JSON，内置 MCP 服务器，可以直接交给 Claude Code、Cursor、Codex 等 AI Agent 调用。

@@ -8,7 +8,7 @@
 
 ## 安装 CLI
 
-从 npm 安装（发布后可用）：
+从 npm 安装（推荐）：
 
 ```bash
 npm install --global njau-cli
@@ -17,7 +17,7 @@ npm install --global njau-cli
 从源码安装：
 
 ```bash
-git clone <repo> njau-cli && cd njau-cli
+git clone https://github.com/Weichenleeeee123/njau-cli.git && cd njau-cli
 npm install
 npm link            # 让 njau-cli 命令在全局可用
 ```
@@ -52,6 +52,7 @@ njau-cli browser install chromium --yes   # 没有 Chrome/Edge 时使用
 
 - MCP：`claude mcp add njau -- njau-cli mcp`，其他客户端配置 `{"command": "njau-cli", "args": ["mcp"]}`。
 - Skill：`njau-cli skill install --target claudecode`（还支持 `codex`、`workbuddy`、`ai-ide`）。
+- OpenClaw 或任意自定义目录：`njau-cli skill install --target claudecode --dir ~/.openclaw/workspace/skills`。
 
 ## 代理与网络
 

@@ -7,6 +7,18 @@
   "bin": {
     "njau-cli": "src/cli.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Weichenleeeee123/njau-cli.git"
+  },
+  "homepage": "https://github.com/Weichenleeeee123/njau-cli#readme",
+  "bugs": {
+    "url": "https://github.com/Weichenleeeee123/njau-cli/issues"
+  },
+  "author": "Weichenleeeee123",
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "src",
     "README.md",
@@ -18,6 +30,7 @@
   "scripts": {
     "docs:check": "node scripts/check-docs.mjs",
     "njau-cli": "node src/cli.js",
+    "prepublishOnly": "node --test && node scripts/check-docs.mjs",
     "test": "node --test"
   },
   "keywords": [
@@ -26,6 +39,11 @@
     "cli",
     "agent",
     "campus",
+    "mcp",
+    "model-context-protocol",
+    "ai-agent",
+    "education",
+    "timetable",
     "playwright"
   ],
   "license": "MIT",

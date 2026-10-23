@@ -6,6 +6,7 @@ import { assertBrowserAvailable, getSelectedBrowser } from './browser.js';
 import { getLaunchOptions } from './browser-options.js';
 import { CliError } from './errors.js';
 import { fixtureKey } from './http.js';
+import { restoreCookies, saveCookies } from './state.js';
 
 export const CAS_HOST = 'authserver.njau.edu.cn';
 const LOGIN_HINT = 'Run `njau-cli auth login`, finish the NJAU unified login (tick 7-day remember-me), then retry.';
@@ -51,9 +52,11 @@ export async function withSession(fn, options = {}) {
     throw launchError(cause);
   }
 
+  await restoreCookies(context);
   try {
     return await fn(createBrowserSession(context));
   } finally {
+    await saveCookies(context).catch(() => {});
     await context.close().catch(() => {});
   }
 }

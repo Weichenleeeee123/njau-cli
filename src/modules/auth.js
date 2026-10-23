@@ -12,6 +12,7 @@ import {
   readPageState,
   withSession
 } from '../core/session.js';
+import { clearCookies, readCookieStateInfo, restoreCookies, saveCookies } from '../core/state.js';
 
 export const PORTAL_URL = 'https://myportal.njau.edu.cn/new/index.html';
 export const CAS_LOGIN_URL = `https://authserver.njau.edu.cn/authserver/login?service=${encodeURIComponent('http://myportal.njau.edu.cn/login?service=https://myportal.njau.edu.cn/new/index.html')}`;
@@ -60,6 +61,7 @@ export async function login(options = {}) {
     });
   }
 
+  await restoreCookies(context);
   try {
     const page = context.pages()[0] ?? await context.newPage();
     await page.goto(options.url ?? CAS_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
@@ -74,6 +76,7 @@ export async function login(options = {}) {
           .catch((cause) => ({ url, ok: false, error: String(cause.message).split('\n')[0] }));
         warmed.push(result);
       }
+      await saveCookies(context);
       if (options.keepOpen) {
         process.stderr.write('登录成功。关闭浏览器窗口后命令结束。\n');
         await context.waitForEvent('close').catch(() => {});
@@ -126,6 +129,7 @@ export async function logout() {
   const profileExisted = existsSync(profilePath);
   try {
     await rm(profilePath, { recursive: true, force: true });
+    await clearCookies();
   } catch (cause) {
     throw new CliError('AUTH_LOGOUT_FAILED', 'Unable to clear the njau-cli browser profile.', {
       hint: 'Close any njau-cli browser window and retry `njau-cli auth logout`.',
@@ -155,7 +159,14 @@ export async function status(options = {}) {
         .then((page) => ({ ok: !isCasUrl(page.url), finalUrl: page.url }))
         .catch((error) => ({ ok: false, error: error.code ?? error.message }));
     }
-    return withHint({ ...result, profileExists, profilePath, finalUrl: state.url, ...(szjw ? { szjw } : {}) });
+    return withHint({
+      ...result,
+      profileExists,
+      profilePath,
+      finalUrl: state.url,
+      savedSession: await readCookieStateInfo(),
+      ...(szjw ? { szjw } : {})
+    });
   });
 }
 

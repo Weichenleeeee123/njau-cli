@@ -26,10 +26,10 @@ export async function checkNetwork(options = {}) {
 
   const advice = [];
   if (fakeIp) {
-    advice.push('检测到代理软件的 fake-ip / TUN 模式。请在代理规则里加 DOMAIN-SUFFIX,njau.edu.cn,DIRECT，让学校域名直连。');
+    advice.push('检测到代理软件的 fake-ip / TUN 模式。南农部分系统（如数智教务）在校园网内只能通过校园 DNS 解析出的内网地址访问，请在代理里同时设置：规则 DOMAIN-SUFFIX,njau.edu.cn,DIRECT；dns.fake-ip-filter 加 +.njau.edu.cn；dns.nameserver-policy 把 +.njau.edu.cn 交给校园 DNS（如 202.195.241.234）或 system。详见 docs/network.md。');
   }
   if (unreachable.includes('szjw')) {
-    advice.push('数智教务平台不可达：它通常只接受境内 / 校园网 IP。请关闭全局代理或设置直连，必要时连接校园网或学校 VPN。');
+    advice.push('数智教务平台不可达：在校外通常需要连接学校 VPN；在校内请确认南农域名用校园 DNS 解析并直连。');
   }
   if (unreachable.length === results.length) {
     advice.push('所有南农站点都不可达，请检查网络连接。');

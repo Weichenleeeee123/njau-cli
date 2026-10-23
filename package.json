@@ -1,0 +1,44 @@
+{
+  "name": "szu-cli",
+  "version": "0.2.14",
+  "private": false,
+  "description": "Agent-friendly CLI for Shenzhen University web services.",
+  "type": "module",
+  "bin": {
+    "szu-cli": "src/cli.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "README_EN.md",
+    "LICENSE",
+    "AGENTS.md",
+    "docs",
+    "skills"
+  ],
+  "scripts": {
+    "docs:check": "node scripts/check-docs.mjs",
+    "eval": "node evals/harness/run.mjs",
+    "eval:l0": "node evals/harness/evaluate-l0.mjs",
+    "skill:skillhub:prepare": "node scripts/prepare-skillhub.mjs",
+    "workbuddy:check": "node scripts/check-workbuddy.mjs",
+    "workbuddy:prepare": "node scripts/prepare-workbuddy.mjs",
+    "prepack": "npm test && npm run docs:check && npm run workbuddy:check",
+    "szu-cli": "node src/cli.js",
+    "test": "node --test"
+  },
+  "keywords": [
+    "szu",
+    "cli",
+    "agent",
+    "campus",
+    "playwright"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "playwright": "^1.61.0"
+  }
+}

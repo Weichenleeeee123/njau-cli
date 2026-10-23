@@ -18,6 +18,12 @@ export async function run(argv) {
     return;
   }
 
+  if (argv[0] === 'mcp' && !argv.includes('--help')) {
+    const { serveMcp } = await import('./mcp.js');
+    await serveMcp(packageInfo);
+    return;
+  }
+
   const format = readFormat(argv);
   argv = stripGlobalOptions(argv);
   const { command, rest } = resolveCommand(argv);

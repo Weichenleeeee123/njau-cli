@@ -18,6 +18,13 @@ export default [
     run: ({ options, packageInfo }) => getDoctorReport({ packageInfo, offline: options.offline })
   },
   {
+    name: 'mcp',
+    summary: '以 MCP (stdio) 服务器方式运行，把只读命令暴露为工具，供 Claude Code / Cursor 等调用',
+    run: () => {
+      throw new Error('`njau-cli mcp` is handled by the entry point.');
+    }
+  },
+  {
     name: 'network check',
     summary: '探测各南农站点是否可达，识别代理 fake-ip 并给出直连建议',
     options: {

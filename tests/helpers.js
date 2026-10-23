@@ -7,10 +7,11 @@ import { fileURLToPath } from 'node:url';
 export const CLI = fileURLToPath(new URL('../src/cli.js', import.meta.url));
 export const FIXTURES = fileURLToPath(new URL('./fixtures/', import.meta.url));
 
-export function runCli(args, env = {}) {
+export function runCli(args, env = {}, input) {
   const home = env.NJAU_CLI_HOME ?? mkdtempSync(join(tmpdir(), 'njau-cli-test-'));
   const result = spawnSync(process.execPath, [CLI, ...args], {
     encoding: 'utf8',
+    input,
     env: {
       ...process.env,
       NJAU_CLI_HOME: home,

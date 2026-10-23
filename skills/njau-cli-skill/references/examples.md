@@ -1,22 +1,43 @@
-# 校园 CLI 示例
+# 自然语言 → 命令示例
 
-用户以自然语言描述任务、需要具体命令示例时读取本文件。模块级路由先读取 `commands.md`。
+假设今天是 2026-10-23（第 8 周周五）。相对日期由 Agent 先换算好。
 
-## 自然语言到 CLI
+| 用户说 | 命令 |
+|---|---|
+| 今天有什么课？/ 今天的安排 | `njau-cli today` |
+| 下节课在哪？ | `njau-cli course next` |
+| 明天几点上课？ | `njau-cli course tomorrow` |
+| 下周三的课 | `njau-cli course today --date 2026-10-28` |
+| 第 10 周课表 | `njau-cli course week --week 10` |
+| 这学期一共上哪些课 | `njau-cli course list` |
+| 周一晚上的课 | `njau-cli course list --weekday 1`（再按 `startTime` ≥ 18:00 筛） |
+| 最近有没有调课 | `njau-cli course changes` |
+| 把课表导到手机日历 | `njau-cli course export --out ./njau.ics --reminder 15` |
+| 现在是第几周？ | `njau-cli calendar week` |
+| 国庆放几天 / 本学期校历 | `njau-cli calendar show`，PDF 原件用 `njau-cli calendar school` |
+| 我的绩点是多少 | `njau-cli grade gpa` |
+| 上学期成绩 | `njau-cli grade list --term 2025-2026-2` |
+| 有没有挂科 | `njau-cli grade list --failed` |
+| 期末考试安排 | `njau-cli exam list --upcoming` |
+| 主楼现在有空教室吗 | `njau-cli classroom free --building 主楼 --sections 3-4` |
+| 明天下午卫岗哪里能自习 | `njau-cli classroom free --date 2026-10-24 --campus 卫岗 --sections 6-9` |
+| 主楼107 这周什么时候有人用 | `njau-cli classroom usage 主楼107` |
+| 还差多少学分 | `njau-cli progress summary` |
+| 专业核心课还有哪些没修 | `njau-cli progress courses --module 专业核心课` |
+| 下学期要上什么课 | `njau-cli plan list --term 2026-2027-2` |
+| 我选了哪些课 | `njau-cli selection list` |
+| 教务处最近发了什么 | `njau-cli notice list --source aao --limit 10` |
+| 有没有奖学金通知 | `njau-cli notice search 奖学金 --source all` |
+| 这周有什么讲座 / 学术报告 | `njau-cli notice list --source events --days 7` |
+| 打开这条通知看看 | `njau-cli notice view <url>` |
+| 下载通知里的附件表格 | `njau-cli notice download <url> --dir ./downloads` |
+| 怎么请假 | `njau-cli portal apps 请假` |
+| 宿舍东西坏了在哪报修 | `njau-cli portal apps 报修` |
+| 教务系统登不上 / 打不开 | `njau-cli network check`，然后 `njau-cli auth status --deep` |
 
-| 用户自然语言 | 推荐命令 | 说明 |
-|---|---|---|
-| “帮我看看今天有什么课” | `szu-cli course today` | 查询当前用户课表，不用全校课表。 |
-| “查一下这周三第 3 到 4 节有什么课” | `szu-cli course list --weekday 3` | 如需周次再加 `--week <n>`。 |
-| “帮我查交通设计相关论文，最好给引用” | `szu-cli cnki search 交通设计 --headed --format gbt7714` | 学术数据库先做元数据/引用；不要批量下载。 |
-| “用万方搜王老师 2024 年的论文” | `szu-cli wanfang search --author 王老师 --year 2024 --headed` | 字段检索走已支持参数。 |
-| “帮我查一本叫交通设计的馆藏书” | `szu-cli library search 交通设计` | 详情再用返回的 id 调 `library item`。 |
-| “粤海校区无氧重量型健身，明早 8 点能约吗” | 先用 `szu-cli sports venues --campus 粤海校区` 匹配项目；唯一匹配“一楼重量型健身”后运行 `sports slots --campus 粤海校区 --venue 一楼重量型健身 --date <YYYY-MM-DD>` | 告知用户自然语言对应的 CLI 项目名称；日期换算后查时段，不能把可预约说成已预约。 |
-| “粤海校区健身房，明早 8 点帮我预约” | 运行 `szu-cli sports venues --campus 粤海校区` 匹配项目，再查时段和 `sports fields` | 如果页面只有一个可预约场馆/场地（如“一楼健身房”），CLI 自动选中；多个项目匹配或多个实际场馆/场地可选时才询问。 |
-| “帮我预约今天下午 3 点的健身房” | 先询问校区；读取画像时可把常用校区作为建议 | 缺校区时不运行场馆命令；校区确定后用 `sports venues` 发现匹配项。 |
-| “帮我预览预约今晚 20:00 的健身房” | 查询并匹配项目，查可预约时段，再用 `sports fields` 查目标时段场馆后运行 `sports reserve ... --dry-run` | 唯一实际场馆/场地由 CLI 自动选中；多个候选先让用户选，再传 `--field`；真实预约必须用户明确确认后才能 `--confirm`。 |
-| “取消刚才那条健身房预约” | `szu-cli sports bookings`，再 `szu-cli sports cancel --order <orderNo> --dry-run` | 先确认订单号；真实取消必须用户明确要求 `--confirm`。 |
-| “我还差哪些学分，哪些课能补” | `szu-cli completion modules`，再 `szu-cli completion courses --module <moduleCode>` | 以模块为单位看已修和未修课程。 |
-| “查一下全部学年的 GPA 和排名” | `szu-cli growth summary` | 使用累计 GPA；若最新学期尚无成绩，CLI 会回退到最近有排名数据的学期，按 `rankingTerm` 说明排名对应的学期。不要用学年 GPA 代替累计 GPA。 |
-| “查宿舍电费，楼栋不确定” | `szu-cli electricity buildings` | 先列楼栋，再用 `electricity query` 精确查询。 |
+## 回答方式
 
+- `today` 的 `next.ongoing` 为 `true`，表示这节课正在上。
+- 课程地点由 `campus` 和 `location` 组成；`location` 为空通常是体育课或由学院另行安排。
+- `course list` 的 `unscheduled` 是“未排具体时间”的教学任务，要提醒用户关注学院通知。
+- GPA 回答中注明“njau-cli 按学分加权计算，以教务处认定为准”。

@@ -1,190 +1,112 @@
-# <img src="assets/icon.png" alt="深圳大学校徽" width="32" align="absmiddle" /> SZU-CLI
+# NJAU-CLI · 南京农业大学校园服务命令行
 
-[![文档 中文](https://img.shields.io/badge/docs-%E4%B8%AD%E6%96%87-blue)](README.md)
-[![Docs English](https://img.shields.io/badge/docs-English-blue)](README_EN.md)
 [![Node.js >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](package.json)
 [![License MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-`szu-cli` 是面向深圳大学网页服务的 agent-friendly CLI。
+`njau-cli` 是面向南京农业大学网页服务的 agent-friendly CLI：把课表、成绩、考试、空教室、通知、办事入口整理成稳定命令。默认输出结构化 JSON，内置 MCP 服务器，可以直接交给 Claude Code、Cursor、Codex 等 AI Agent 调用。
 
-它把常用校园网页能力整理成稳定命令和结构化 JSON 输出，同时复用本机持久化浏览器登录态，不保存账号密码。
+- **不保存密码**：用户在 CLI 打开的浏览器窗口里自己完成统一身份认证，CLI 只复用本机的登录态。
+- **只读**：不提供选课、请假、报修等写操作；这类事务给出办事大厅入口，由用户自己去办。
+- **非官方**：本项目基于 [szu-cli](https://github.com/AwesomeHou/szu-cli)（MIT）改写，与学校无隶属关系，数据以学校系统为准。
 
-连接器和 Skill 由深大学生自行制作，非官方，如有任何问题可在 [github.com/AwesomeHou/szu-cli](https://github.com/AwesomeHou/szu-cli) 上进行反馈或通过电子邮件与我取得联系。
+## 快速开始
 
-## 安装与快速开始
-
-要求 Node.js 20 或更高版本，并确保 `npm`/`npx` 可用。
-
-### 快速开始（人类用户）
-
-#### 从 npm 安装（推荐）
+需要 Node.js 20 及以上，以及 Chrome 或 Edge。
 
 ```bash
-npx szu-cli@latest install
+npm install --global njau-cli     # 或在仓库里运行 npm install && npm link
+njau-cli doctor                   # 检查环境和各南农站点的连通性
+njau-cli auth login               # 在弹出的浏览器里登录统一身份认证（建议勾选“7天免登录”）
+njau-cli today --format table     # 今日概览
 ```
 
-> 该命令会完成两件事：
->
-> 1. 将 `szu-cli@latest` 安装到 npm 全局路径，使 `szu-cli` 命令可以直接使用。
-> 2. 从当前 npm 包自带的 `skills/szu-cli-skill` 安装文件，通过 `npx skills add` 将 Skill 全局安装到当前环境中可识别的主流 AI Agent。
->
-> 支持的 Agent 及其项目级、全局 skill 目录请参阅 [Supported Agents](https://github.com/vercel-labs/skills/blob/main/README.md#supported-agents)，包括 Codex、Claude Code、Cursor 等。WorkBuddy 可以在连接器市场安装“深圳大学校园服务”，也可以搜索 `szu-cli-skill` 安装 Skill。
+> 在校内开着 Clash 等代理时，数智教务平台可能打不开，请先运行 `njau-cli network check`，再按 [docs/network.md](docs/network.md) 设置直连和校园 DNS。
 
-初始化浏览器登录态：
+## 能做什么
 
-```bash
-szu-cli auth login
-szu-cli auth status
-```
-
-### 快速开始（AI Agent）
-
-以下步骤面向正在协助用户操作的 AI Agent；登录步骤需要用户在浏览器中完成。
-
-第 1 步 — 安装：
-
-```bash
-npx szu-cli@latest install
-```
-
-第 2 步 — 检查运行环境：
-
-```bash
-szu-cli doctor
-```
-
-第 3 步 — 登录：
-
-```bash
-szu-cli auth login
-```
-
-第 4 步 — 验证登录态：
-
-```bash
-szu-cli auth status
-```
-
-`auth login` 会打开一个持久化浏览器 profile。你在正常网页里完成登录后，后续命令会复用 `~/.szu-cli/browser-profiles/<browser>/` 下的登录态。
-
-所有命令默认输出 JSON；`--json` 仍可作为旧调用的兼容参数。浏览器会优先使用用户选择或系统默认的 Chrome/Edge，并为 Chrome、Edge、Chromium 保存独立的 CLI profile。
-
-当前支持 Google Chrome、Microsoft Edge 和 Playwright Chromium；Safari、Firefox 及其他默认浏览器不会被直接复用。
-
-查看浏览器状态，或在没有可用 Chrome/Edge 时按确认安装 Playwright Chromium：
-
-```bash
-szu-cli browser status
-szu-cli browser install chromium --yes
-```
-
-如需使用 Edge：
-
-```powershell
-$env:SZU_BROWSER='edge'
-szu-cli auth login
-```
-
-### 仅安装CLI或skill
-
-仅安装 CLI：
-
-```bash
-npm install --global szu-cli
-```
-
-仅安装 skill：
-
-```bash
-npx --yes skills add https://github.com/AwesomeHou/szu-cli --skill szu-cli-skill --yes --global
-```
-
-## 当前能力
-
-| 模块 | 实现的功能 | 示例命令 |
+| 模块 | 命令示例 | 说明 |
 |---|---|---|
-| 环境与认证 | 检查运行环境、浏览器后端和当前登录状态 | `szu-cli doctor`<br>`szu-cli auth status` |
-| 公文通 | 查询公告列表、搜索公告并读取正文和附件信息 | `szu-cli notice list --limit 10`<br>`szu-cli notice search 奖学金` |
-| 个人课表 | 查询本学期课表或当天课程 | `szu-cli course list`<br>`szu-cli course today` |
-| 全校课表与培养方案 | 查询班级课表、培养方案及课程模块 | `szu-cli timetable classes --limit 5`<br>`szu-cli program list --limit 5` |
-| 成绩与学业进度 | 查询成绩、GPA、思政学分和培养方案完成情况 | `szu-cli grade list`<br>`szu-cli completion summary` |
-| 创新领航讲座 | 查询可报名讲座、讲座详情和个人学习进度 | `szu-cli lecture list`<br>`szu-cli lecture progress` |
-| 体育预约 | 查询项目、时段和实际可预约场馆/场地；唯一候选自动选择，多个候选可用 `--field` 指定 | `szu-cli sports fields --campus 粤海校区 --venue 羽毛球 --date 2026-07-08 --slot 20:00-21:00`<br>`szu-cli sports reserve --campus 粤海校区 --venue 羽毛球 --date 2026-07-08 --slot 20:00-21:00 --field "羽毛球场 A4" --dry-run` |
-| 宿舍电费 | 查询可用楼栋及指定房间的用电余额 | `szu-cli electricity query --campus 深大新斋区 --building 红豆斋 --room 838` |
-| 图书馆馆藏 | 搜索图书并查询馆藏位置、索书号和借阅状态 | `szu-cli library search 交通设计`<br>`szu-cli library item 3706432` |
-| 知网 | 在用户可见浏览器中检索论文元数据和详情 | `szu-cli cnki search 交通设计 --headed` |
-| 万方 | 在用户可见浏览器中检索论文元数据和详情 | `szu-cli wanfang search 交通设计 --headed` |
+| 今日概览 | `njau-cli today` | 今天/明天的课、下一节课、14 天内考试、本周调课、最新通知 |
+| 课表 | `njau-cli course today` · `course next` · `course week --week 10` · `course list` | 根据教学校历自动换算周次 |
+| 调停课 | `njau-cli course changes` | 集体调课、停课记录 |
+| 导出日历 | `njau-cli course export --out njau.ics --reminder 15` | 生成 .ics，可导入手机、Outlook、Google 日历 |
+| 成绩 | `njau-cli grade list` · `grade gpa` · `grade list --failed` | 按学期统计的加权 GPA 和加权平均分 |
+| 考试 | `njau-cli exam list --upcoming` | 时间、地点、座位号 |
+| 空教室 | `njau-cli classroom free --campus 卫岗 --building 主楼 --sections 3-4` | 按日期/周次、节次、校区、教学楼、座位数筛选 |
+| 教室占用 | `njau-cli classroom usage 主楼107` | 某间教室一周的占用情况 |
+| 学业达成 | `njau-cli progress summary` · `progress courses --module 专业核心课` | 各课程体系要求/已获/在修/还需学分 |
+| 培养方案 | `njau-cli plan list --term 2026-2027-2` | 执行方案课程 |
+| 选课结果 | `njau-cli selection list` | 本学期已选课程 |
+| 学期与校历 | `njau-cli term current` · `calendar week` · `calendar show` · `calendar school` | 当前第几周、每周日期、节假日、校历 PDF |
+| 通知公告（免登录） | `njau-cli notice list` · `notice search 奖学金` · `notice view <url>` · `notice download <url>` | 学校通知、学术活动预告、教务处通知、下载中心等 9 个来源 |
+| 办事大厅 | `njau-cli portal apps 请假` · `portal categories` · `portal reminders` | 136 个应用的入口链接 |
+| 个人信息 | `njau-cli me` | 学号、院系、专业、班级 |
+| 网络诊断 | `njau-cli network check` | 识别代理 fake-ip 并给出修复建议 |
 
-更多命令请看英文版 [README](README_EN.md) 和 [CLI 契约](docs/cli-contract.md)。
+全部命令见 `njau-cli help`，或 [skills/njau-cli-skill/references/commands.md](skills/njau-cli-skill/references/commands.md)。每条命令都支持 `--help`；加 `--format table` 输出人读表格。
 
-## 使用示例
+## 给 AI Agent 用
 
-### 查询图书馆馆藏
+**方式一：MCP 服务器（推荐）**
 
-通过自然语言查找图书，获取馆藏位置、索书号和借阅状态。
+```bash
+claude mcp add njau -- njau-cli mcp
+```
 
-![查询图书馆馆藏示例](assets/查馆藏.png)
+其他客户端（如 Cursor 的 `mcp.json`）里这样配置：
 
-### 查询 GPA 与专业排名
+```json
+{ "mcpServers": { "njau": { "command": "njau-cli", "args": ["mcp"] } } }
+```
 
-汇总全部学年的 GPA 和专业排名。
+这样会暴露 37 个只读工具（`njau_today`、`njau_course_next`、`njau_classroom_free` 等）。会打开窗口或写文件的命令不会暴露。
 
-![查询 GPA 与专业排名示例](assets/查绩点排名.png)
+**方式二：Skill**
 
-### 查看毕业学分进度
+```bash
+njau-cli skill install --target claudecode   # 或 codex / workbuddy / ai-ide
+```
 
-查看培养方案的学分完成情况和未修课程。
+Skill 告诉 Agent 怎样把自然语言映射到命令、如何处理错误，以及隐私边界。
 
-![查看毕业学分进度示例](assets/查学分.png)
+## 输出约定
 
-### 预约健身房
+```json
+{ "ok": true, "data": { ... }, "meta": { "command": "course today", "backend": "playwright" } }
+{ "ok": false, "error": { "code": "LOGIN_REQUIRED", "message": "...", "hint": "Run `njau-cli auth login` ..." }, "meta": { ... } }
+```
 
-先查询可预约时段并预览预约信息，确认后提交；预约提交后仍需按场馆要求完成支付。
+错误码和退出码见 [docs/cli-contract.md](docs/cli-contract.md)。
 
-![预约健身房：查询时段并选择时间](assets/预约健身房-1.png)
-
-![预约健身房：确认并提交预约](assets/预约健身房-2.png)
-
-## 设计方向
+## 工作原理
 
 ```text
-Agent 或用户
-  -> szu-cli 命令契约
-  -> 校园事务模块
-  -> 直接校园网访问
-  -> Playwright 持久化浏览器 profile
-  -> 深圳大学网页系统
+Agent / 用户
+  → njau-cli（命令注册表 → JSON 输出 / MCP 工具）
+  → 业务模块：szjw（强智数智教务）、portal（金智 AMP 办事大厅）、notice（WebPlus / VSB 公开站点）
+  → 浏览器会话：Playwright 持久化 profile + 会话 cookie 持久化（~/.njau-cli，权限 600）
+  → 南农各系统（统一身份认证 authserver.njau.edu.cn 单点登录）
 ```
 
-skill 只负责告诉 agent 何时、如何安全调用 `szu-cli`。核心登录态、网页解析和校园业务逻辑都放在 CLI 中。
+数智教务部分直接调用教务前端自己使用的 JSON 接口（携带用户登录后的 cookie），不渲染页面，所以一般 1～3 秒就能返回。细节见 [docs/architecture.md](docs/architecture.md)。
 
-## 安全边界
+## 目前不做的
 
-- 不收集账号密码。
-- 不绕过登录、验证码、校园网络限制、访问控制或频率限制。
-- 默认优先实现只读能力。
-- 不做高频抓取或批量下载。
-- 状态变更命令必须先支持 `--dry-run`。`sports reserve` 和 `sports cancel` 的真实状态变更都必须显式 `--confirm`，不自动支付、不取消支付。
-- 不把 cookies、浏览器 profile、截图、HAR、trace 等本地敏感文件提交到 Git。
+- **图书馆馆藏查询**：馆藏系统（超星图星 LibSP）有独立账号，登录还要过滑块验证码，CLI 不绕过验证码。
+- **任何写操作**：选课、请假、报修、缓考申请等。
+- **校外访问数智教务**：需要学校 VPN，CLI 不负责绕过网络限制。
 
-## 文档
+## 开发
 
-- [架构](docs/architecture.md)
-- [CLI 契约](docs/cli-contract.md)
-- [安装](docs/installation.md)
-- [登录态](docs/login-state.md)
-- [发布检查](docs/release.md)
-- [安全与合规](docs/security-and-compliance.md)
-- [Skill 集成](docs/skill-integration.md)
-- [路线图](docs/roadmap.md)
+```bash
+npm install
+node --test                          # 单元测试 + CLI 契约测试（mock 后端，合成数据）
+node scripts/gen-commands-doc.mjs    # 新增命令后重新生成命令参考
+node scripts/check-docs.mjs
+```
 
-## 贡献与反馈
+测试数据全部是合成的，仓库里不保存任何从学校系统抓取的数据。调试抓取的数据放在 `scratch/`（已 gitignore）。
 
-欢迎提交功能建议、Bug 报告和文档改进。
+## 许可
 
-- 通过 [GitHub Issues](https://github.com/AwesomeHou/szu-cli/issues) 反馈问题或建议。提交前先搜索已有 issue；Bug 请说明运行环境、复现命令、预期结果和实际结果，注意不要附带账号、Cookie 或浏览器 profile。
-- 提交 PR 时，先 Fork 仓库并从 `develop` 创建主题分支；保持改动聚焦，同时更新受影响的命令文档和 skill。
-- 提交前运行 `npm test` 和 `npm run docs:check`，然后推送分支并通过 [创建 Pull Request](https://github.com/AwesomeHou/szu-cli/compare) 发起 PR。请在描述中写明改动范围、验证结果和关联 issue。
-## 许可证
-
-MIT
+MIT。原始框架来自 szu-cli contributors，见 [LICENSE](LICENSE)。

@@ -34,8 +34,8 @@
 - 已知 URL：
   - `https://szjw.njau.edu.cn/xsd/`（学生端）
   - `https://szjw.njau.edu.cn/api/login/sso/cas/login?platformCode=DEF_CAS&service=https://szjw.njau.edu.cn/xkxzd`（选课端，走 CAS 单点登录）
-- 前后端分离，后端在 `/api/` 下。厂商**未确认**，推测是强智科技的「数智教学微服务平台」（产品名和“教学一体化服务平台”的说法吻合），要登录后看页面版权信息才能确定。
-- **在本机没访问成功**：本机走了代理（DNS 是 198.18.x 的 fake-ip，出口 IP 在香港）。HTTP 访问能拿到 307，但 HTTPS 握手成功后服务器一直不回应，应该是 szjw 只对境内或校内 IP 开放。
+- 前后端分离，后端在 `/api/xsd/` 下。**已确认**是强智科技的「数智教学微服务平台」：页面标题是“新教务系统”，接口前缀为 `qsmart` 和 `jsxsd`，localStorage 里有 `xsd_qz-one`。鉴权只用 cookie，没有额外的 token 头。
+- ~~应该是 szjw 只对境内或校内 IP 开放~~ **这个判断是错的。** 真正原因是校内 DNS 和公网 DNS 给出的地址不同：校园 DNS（202.195.241.234）解析出 `202.195.242.146`，公共 DNS 解析出 `112.4.128.139`。从校园网内部访问后者，TLS 能握手成功，但 HTTP 请求没有响应。Clash 的 fake-ip 加公共 DNS 正好会命中这种情况。修复方法见 `docs/network.md`。
 - 旧教务 `jw3.njau.edu.cn` 还在，同样走 CAS。
 
 ### 2.4 其他和学生相关的系统（来自 sys.njau.edu.cn 的分类导航）
@@ -52,8 +52,12 @@
 | 课程中心（超星） | `http://njau.fy.chaoxing.com/portal` | 是 | 暂缓 |
 | 秾小智 | `https://chatnau.njau.edu.cn/` | 是 | 学校官方的 AI 助手，和本项目功能有重叠 |
 
-## 3. 还没确认的事（需要登录 + 能访问 szjw 的网络）
-1. szjw 的厂商，以及课表、成绩、考试安排分别对应哪些 `/api/` 接口和返回结构。
-2. szjw 的登录态是否就是 CAS 的 cookie，还是另外签发 token（存在 localStorage 还是 header）。这决定了 headless 复用 profile 能不能直接用。
-3. myportal 应用列表接口的路径。
-4. 电费、一卡通、体育场馆在南农分别由哪个系统负责（导航里没有直接给出）。
+## 3. 登录后确认的结论（2026-10-23）
+1. szjw 学生端的接口清单见 `src/modules/szjw/service.js`，共 40 个菜单页面。只读页面都已覆盖；各类“申请”页面不做。
+2. 登录态就是 cookie。南农 CAS 的 `CASTGC` 和各系统的会话 cookie 都是会话级的，持久化 profile 留不住，所以要另存 cookie（见 `docs/login-state.md`）。
+3. myportal 应用目录接口是 `/jsonp/serviceCenterData.json?containLabels=true&searchKey=`，共 136 个应用，打开地址用 `/appShow?appId=`。
+4. 图书馆馆藏系统是 `findnjau.libsp.com`（超星图星 LibSP），有独立账号和滑块验证码，CLI 不做。
+5. 电费、一卡通仍未找到网页接口，留在路线图里。
+
+## 4. 隐私发现
+- 选课结果接口 `xkgl/wdxk/query` 会把授课教师的完整人事信息一起返回，包括身份证号。CLI 用 `stripSensitive` 统一剥离，仓库里的测试也全部用合成数据。

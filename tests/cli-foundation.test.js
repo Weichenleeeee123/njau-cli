@@ -1,208 +1,87 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
-import test from 'node:test';
 import assert from 'node:assert/strict';
+import test from 'node:test';
 
-const cliPath = fileURLToPath(new URL('../src/cli.js', import.meta.url));
+import { parseArgs } from '../src/core/args.js';
+import { isFakeIp } from '../src/modules/network.js';
+import { classifyAuthPage } from '../src/modules/auth.js';
+import { runCli } from './helpers.js';
 
-function runCli(args, options = {}) {
-  const home = mkdtempSync(join(tmpdir(), 'szu-cli-test-'));
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      SZU_CLI_HOME: home,
-      ...options.env
+test('parseArgs handles numbers, lists, booleans, inline values and positionals', () => {
+  const { options, positionals } = parseArgs(
+    ['奖学金', '--limit', '5', '--source=www', '--source', 'aao', '--all', '--dry-run'],
+    {
+      limit: { type: 'number', default: 20 },
+      source: { type: 'list' },
+      all: { type: 'boolean' },
+      dryRun: { type: 'boolean' }
     }
-  });
-  rmSync(home, { recursive: true, force: true });
-  return result;
-}
-
-test('prints package version', () => {
-  const result = runCli(['--version']);
-
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout.trim(), /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
+  );
+  assert.deepEqual(positionals, ['奖学金']);
+  assert.equal(options.limit, 5);
+  assert.deepEqual(options.source, ['www', 'aao']);
+  assert.equal(options.all, true);
+  assert.equal(options.dryRun, true);
 });
 
-test('doctor prints JSON readiness envelope', () => {
-  const result = runCli(['doctor']);
-
-  assert.equal(result.status, 0, result.stderr);
-  const body = JSON.parse(result.stdout);
-  assert.equal(body.ok, true);
-  assert.equal(body.meta.command, 'doctor');
-  assert.equal(body.data.node.ok, true);
-  assert.equal(body.data.profile.path.includes('szu-cli-test-'), true);
-  assert.equal(typeof body.data.playwright.installed, 'boolean');
-  assert.equal(['chrome', 'msedge', 'chromium'].includes(body.data.browser.channel), true);
+test('parseArgs rejects unknown options and bad numbers', () => {
+  assert.throws(() => parseArgs(['--nope'], {}), { code: 'INVALID_ARGUMENT' });
+  assert.throws(() => parseArgs(['--limit', 'x'], { limit: { type: 'number' } }), { code: 'INVALID_ARGUMENT' });
+  assert.throws(() => parseArgs(['--fmt', 'x'], { fmt: { type: 'string', choices: ['a'] } }), { code: 'INVALID_ARGUMENT' });
 });
 
-test('browser status reports separate profiles and JSON by default', () => {
-  const result = runCli(['browser', 'status']);
-
-  assert.equal(result.status, 0, result.stderr);
-  const body = JSON.parse(result.stdout);
-  assert.equal(body.ok, true);
-  assert.equal(body.meta.command, 'browser status');
-  assert.notEqual(body.data.browsers.chrome.profilePath, body.data.browsers.edge.profilePath);
-  assert.match(body.data.browsers.chrome.profilePath, /browser-profiles[\\/]chrome$/);
-  assert.match(body.data.browsers.edge.profilePath, /browser-profiles[\\/]edge$/);
+test('help lists commands as JSON', () => {
+  const result = runCli(['help']);
+  assert.equal(result.status, 0);
+  assert.equal(result.json.ok, true);
+  assert.ok(result.json.data.commands.some((command) => command.name === 'auth login'));
 });
 
-test('browser install requires explicit confirmation in non-interactive mode', () => {
-  const result = runCli(['browser', 'install', 'chromium']);
-
-  assert.equal(result.status, 16, result.stderr);
-  const body = JSON.parse(result.stdout);
-  assert.equal(body.ok, false);
-  assert.equal(body.error.code, 'BROWSER_INSTALL_CONFIRM_REQUIRED');
+test('command --help describes options', () => {
+  const result = runCli(['network', 'check', '--help']);
+  assert.equal(result.json.data.name, 'network check');
+  assert.ok(result.json.data.options.some((option) => option.flag === '--timeout'));
 });
 
-test('auth status reports missing profile as logged out', () => {
-  const result = runCli(['auth', 'status']);
-
-  assert.equal(result.status, 0, result.stderr);
-  const body = JSON.parse(result.stdout);
-  assert.equal(body.ok, true);
-  assert.equal(body.meta.command, 'auth status');
-  assert.equal(body.meta.backend, 'playwright');
-  assert.deepEqual(body.data, {
-    loggedIn: false,
-    reason: 'profile-missing',
-    profileExists: false,
-    profilePath: body.data.profilePath,
-    hint: 'Run `szu-cli auth login` and complete login in the opened browser.'
-  });
-  assert.equal(body.data.profilePath.includes('szu-cli-test-'), true);
-});
-
-test('auth status can report checked page through mock backend', () => {
-  const result = runCli(['auth', 'status', '--json'], {
-    env: {
-      SZU_BROWSER_BACKEND: 'mock',
-      SZU_MOCK_AUTH_URL: 'https://www1.szu.edu.cn/board/',
-      SZU_MOCK_AUTH_TITLE: '校园公文通—深圳大学内部网',
-      SZU_MOCK_AUTH_TEXT: '侯燊 个人中心｜注销 ｜说明 首 页 ｜ 公文通',
-      SZU_MOCK_AUTH_LOGGED_IN: 'true',
-      SZU_MOCK_AUTH_PROFILE_EXISTS: 'true'
-    }
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  const body = JSON.parse(result.stdout);
-  assert.equal(body.ok, true);
-  assert.equal(body.meta.backend, 'mock');
-  assert.equal(body.data.loggedIn, true);
-  assert.equal(body.data.reason, 'mock-configured');
-  assert.equal(body.data.authSource, 'fixture');
-  assert.equal(body.data.profileExists, true);
-  assert.equal(body.data.finalUrl, 'https://www1.szu.edu.cn/board/');
-});
-
-test('mock auth status does not infer login from page text without a profile or explicit fixture state', () => {
-  const result = runCli(['auth', 'status', '--json'], {
-    env: {
-      SZU_BROWSER_BACKEND: 'mock',
-      SZU_MOCK_AUTH_URL: 'https://www1.szu.edu.cn/board/',
-      SZU_MOCK_AUTH_TITLE: '校园公文通—深圳大学内部网',
-      SZU_MOCK_AUTH_TEXT: '个人中心｜注销 ｜公文通'
-    }
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  const body = JSON.parse(result.stdout);
-  assert.equal(body.meta.backend, 'mock');
-  assert.equal(body.data.loggedIn, false);
-  assert.equal(body.data.reason, 'profile-missing');
-  assert.equal(body.data.profileExists, false);
-});
-
-test('auth login opens configured target with browser profile', () => {
-  const result = runCli([
-    'auth',
-    'login',
-    '--json',
-    '--url',
-    'https://www1.szu.edu.cn/board/'
-  ], {
-    env: {
-      SZU_BROWSER_BACKEND: 'mock'
-    }
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  const body = JSON.parse(result.stdout);
-  assert.equal(body.ok, true);
-  assert.equal(body.meta.command, 'auth login');
-  assert.equal(body.data.opened, true);
-  assert.equal(body.data.closed, true);
-  assert.equal(body.data.url, 'https://www1.szu.edu.cn/board/');
-  assert.equal(body.data.profilePath.includes('szu-cli-test-'), true);
-});
-
-test('WorkBuddy auth emits a plain HTTPS login URL on stderr', () => {
-  const result = runCli([
-    'auth',
-    'login',
-    '--workbuddy',
-    '--url',
-    'https://authserver.szu.edu.cn/authserver/login'
-  ], {
-    env: {
-      SZU_BROWSER_BACKEND: 'mock'
-    }
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stderr, /\shttps:\/\/authserver\.szu\.edu\.cn\/authserver\/login\s/);
-  const body = JSON.parse(result.stdout);
-  assert.equal(body.ok, true);
-  assert.equal(body.meta.command, 'auth login');
-});
-
-test('auth logout clears the persistent browser profile', () => {
-  const home = mkdtempSync(join(tmpdir(), 'szu-auth-logout-'));
-  const profilePath = join(home, 'browser-profile');
-  mkdirSync(profilePath, { recursive: true });
-
-  const result = spawnSync(process.execPath, [cliPath, 'auth', 'logout', '--json'], {
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      SZU_CLI_HOME: home
-    }
-  });
-
-  assert.equal(result.status, 0, result.stderr);
-  const body = JSON.parse(result.stdout);
-  assert.equal(body.ok, true);
-  assert.equal(body.meta.command, 'auth logout');
-  assert.equal(body.data.loggedOut, true);
-  assert.equal(body.data.profileExisted, true);
-  assert.equal(existsSync(profilePath), false);
-  rmSync(home, { recursive: true, force: true });
-});
-
-test('auth status returns structured JSON for invalid options', () => {
-  const result = runCli(['auth', 'status', '--invalid', '--json']);
-
-  assert.equal(result.status, 1);
-  const body = JSON.parse(result.stdout);
-  assert.equal(body.ok, false);
-  assert.equal(body.error.code, 'UNKNOWN_ERROR');
-  assert.equal(body.meta.command, 'auth status');
-});
-
-test('unknown command returns structured JSON error', () => {
-  const result = runCli(['unknown', '--json']);
-
+test('unknown command returns UNKNOWN_COMMAND with exit code 2', () => {
+  const result = runCli(['nope', 'cmd']);
   assert.equal(result.status, 2);
-  const body = JSON.parse(result.stdout);
-  assert.equal(body.ok, false);
-  assert.equal(body.error.code, 'UNSUPPORTED_ACTION');
+  assert.equal(result.json.error.code, 'UNKNOWN_COMMAND');
+});
+
+test('unknown option returns INVALID_ARGUMENT', () => {
+  const result = runCli(['auth', 'status', '--bogus']);
+  assert.equal(result.status, 2);
+  assert.equal(result.json.error.code, 'INVALID_ARGUMENT');
+});
+
+test('--format table renders human text', () => {
+  const result = runCli(['help', '--format', 'table']);
+  assert.match(result.stdout, /auth login/);
+  assert.equal(result.json, null);
+});
+
+test('auth status reports missing profile with a login hint', () => {
+  const result = runCli(['auth', 'status']);
+  assert.equal(result.json.data.loggedIn, false);
+  assert.match(result.json.data.hint, /auth login/);
+});
+
+test('auth login then status in mock backend', () => {
+  const login = runCli(['auth', 'login']);
+  assert.equal(login.json.data.authenticated, true);
+  const status = runCli(['auth', 'status'], { NJAU_CLI_HOME: login.home });
+  assert.equal(status.json.data.loggedIn, true);
+  const logout = runCli(['auth', 'logout'], { NJAU_CLI_HOME: login.home });
+  assert.equal(logout.json.data.profileExisted, true);
+});
+
+test('classifyAuthPage recognises CAS and portal pages', () => {
+  assert.equal(classifyAuthPage({ url: 'https://authserver.njau.edu.cn/authserver/login?service=x', title: '统一身份认证平台' }).loggedIn, false);
+  assert.equal(classifyAuthPage({ url: 'https://myportal.njau.edu.cn/new/index.html', title: '南京农业大学网上办事大厅', text: '我的服务\n退出' }).loggedIn, true);
+  assert.equal(classifyAuthPage({ url: 'https://szjw.njau.edu.cn/xsd/', title: '数智教务' }).loggedIn, true);
+});
+
+test('isFakeIp recognises Clash fake-ip ranges', () => {
+  assert.equal(isFakeIp('198.18.1.8'), true);
+  assert.equal(isFakeIp('202.195.240.1'), false);
 });

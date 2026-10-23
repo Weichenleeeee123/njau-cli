@@ -25,7 +25,7 @@ scratch/
 # Browser auth state and automation artifacts
 profiles/
 browser-profiles/
-.szu-profile/
+.njau-profile/
 playwright/.auth/
 cookies*.json
 session*.json

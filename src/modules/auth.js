@@ -1,271 +1,167 @@
 import { existsSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 
-import { getProfilePath } from './paths.js';
-import { getLaunchOptions } from './browser-options.js';
-import { assertBrowserAvailable } from './browser.js';
-import { classifyAuthPage } from './auth-detector.js';
+import { assertBrowserAvailable } from '../core/browser.js';
+import { getLaunchOptions } from '../core/browser-options.js';
+import { CliError } from '../core/errors.js';
+import {
+  getProfilePath,
+  importPlaywright,
+  isCasUrl,
+  isMockBackend,
+  readPageState,
+  withSession
+} from '../core/session.js';
 
-const DEFAULT_AUTH_CHECK_URL = 'https://www1.szu.edu.cn/board/';
-const LOGIN_HINT = 'Run `szu-cli auth login` and complete login in the opened browser.';
-const WORKBUDDY_LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
+export const PORTAL_URL = 'https://myportal.njau.edu.cn/new/index.html';
+export const CAS_LOGIN_URL = `https://authserver.njau.edu.cn/authserver/login?service=${encodeURIComponent('http://myportal.njau.edu.cn/login?service=https://myportal.njau.edu.cn/new/index.html')}`;
+// Visiting these after CAS login lets each system issue its own session cookie.
+const WARMUP_URLS = [
+  'https://szjw.njau.edu.cn/api/login/sso/cas/login?platformCode=DEF_CAS&service=https://szjw.njau.edu.cn/xsd/'
+];
+const LOGIN_TIMEOUT_MS = 5 * 60 * 1000;
 
-export async function loginWithBrowserProfile(options = {}) {
-  const profilePath = getProfilePath();
-  const url = options.url ?? 'https://www1.szu.edu.cn/board/';
+export function classifyAuthPage(state) {
+  const url = state.url ?? '';
+  const title = state.title ?? '';
+  const text = state.text ?? '';
+  if (isCasUrl(url) || title.includes('统一身份认证')) {
+    return { loggedIn: false, reason: 'cas-login-page' };
+  }
+  if (url.includes('myportal.njau.edu.cn') && /退出|注销|个人中心|我的服务|Logout/i.test(text)) {
+    return { loggedIn: true, reason: 'portal-user-menu' };
+  }
+  if (url.includes('myportal.njau.edu.cn') && !/登录Login|^登录$/m.test(text)) {
+    return { loggedIn: true, reason: 'portal-page' };
+  }
+  if (url.includes('szjw.njau.edu.cn') && !/登录/.test(title)) {
+    return { loggedIn: true, reason: 'szjw-page' };
+  }
+  return { loggedIn: false, reason: 'unknown' };
+}
 
+export async function login(options = {}) {
+  const profilePath = getProfilePath({ persist: true });
   await mkdir(profilePath, { recursive: true });
 
-  if (process.env.SZU_BROWSER_BACKEND === 'mock') {
-    if (options.workbuddy) {
-      emitAuthUrl(url);
-    }
-    return {
-      opened: true,
-      closed: options.waitForClose !== false,
-      url,
-      profilePath,
-      backend: 'mock'
-    };
+  if (isMockBackend()) {
+    return { opened: true, authenticated: true, url: CAS_LOGIN_URL, profilePath, backend: 'mock' };
   }
 
   const browser = assertBrowserAvailable();
   const { chromium } = await importPlaywright();
-  const context = await chromium.launchPersistentContext(profilePath, getLaunchOptions({
-    headless: options.headless ?? false
-  }));
+  let context;
+  try {
+    context = await chromium.launchPersistentContext(profilePath, getLaunchOptions({ headless: false }));
+  } catch (cause) {
+    throw new CliError('BACKEND_UNAVAILABLE', `Unable to open the login browser: ${String(cause.message).split('\n')[0]}`, {
+      hint: 'Close other njau-cli browser windows and retry.',
+      cause
+    });
+  }
+
   try {
     const page = context.pages()[0] ?? await context.newPage();
-    await page.goto(url, { waitUntil: 'domcontentloaded' });
-    const finalUrl = page.url();
-    if (options.workbuddy) {
-      emitAuthUrl(finalUrl);
-    }
+    await page.goto(options.url ?? CAS_LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+    process.stderr.write('请在打开的浏览器窗口里完成南京农业大学统一身份认证登录（建议勾选“7天免登录”）。\n');
 
-    let loginOutcome = null;
-    if (options.waitForClose !== false) {
-      loginOutcome = options.workbuddy
-        ? await waitForLoginOrClose(page, context)
-        : await context.waitForEvent('close').then(() => 'closed');
+    const outcome = await waitForLogin(page, context, options.timeout ?? LOGIN_TIMEOUT_MS);
+    const warmed = [];
+    if (outcome === 'authenticated') {
+      for (const url of options.warmup === false ? [] : WARMUP_URLS) {
+        const result = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 })
+          .then(() => ({ url, ok: !isCasUrl(page.url()), finalUrl: page.url() }))
+          .catch((cause) => ({ url, ok: false, error: String(cause.message).split('\n')[0] }));
+        warmed.push(result);
+      }
+      if (options.keepOpen) {
+        process.stderr.write('登录成功。关闭浏览器窗口后命令结束。\n');
+        await context.waitForEvent('close').catch(() => {});
+      }
     }
 
     return {
       opened: true,
-      closed: loginOutcome === null || loginOutcome === 'closed' || loginOutcome === 'authenticated',
-      ...(loginOutcome === 'authenticated' ? { authenticated: true } : {}),
-      url: finalUrl,
-      profilePath,
+      authenticated: outcome === 'authenticated',
+      outcome,
       browser: browser.id,
-      backend: 'playwright',
-      message: options.workbuddy && loginOutcome === 'authenticated'
-        ? 'Login completed and the browser profile is ready.'
-        : options.waitForClose === false
-          ? 'Complete login in the opened browser window, then close it when finished.'
-          : 'Browser was closed. Rerun `szu-cli auth status` to verify login.'
+      profilePath,
+      warmup: warmed,
+      message: outcome === 'authenticated'
+        ? 'Login completed; the browser profile is ready.'
+        : 'Browser was closed before login finished. Rerun `njau-cli auth login`.'
     };
   } finally {
     await context.close().catch(() => {});
   }
 }
 
-async function waitForLoginOrClose(page, context) {
-  const deadline = Date.now() + WORKBUDDY_LOGIN_TIMEOUT_MS;
-  const contextClosed = context.waitForEvent('close').then(() => 'closed');
-
+async function waitForLogin(page, context, timeout) {
+  const deadline = Date.now() + timeout;
+  let closed = false;
+  context.once('close', () => {
+    closed = true;
+  });
   while (Date.now() < deadline) {
-    if (page.isClosed()) {
+    if (closed || page.isClosed()) {
       return 'closed';
     }
-
-    const pageState = await readAuthPage(page);
-    if (classifyAuthPage(pageState).loggedIn) {
-      return 'authenticated';
+    const url = page.url();
+    if (url.includes('myportal.njau.edu.cn') || url.includes('szjw.njau.edu.cn')) {
+      await page.waitForLoadState('domcontentloaded').catch(() => {});
+      const state = await readPageState(page).catch(() => ({ url }));
+      if (classifyAuthPage(state).loggedIn) {
+        return 'authenticated';
+      }
     }
-
-    const outcome = await Promise.race([
-      contextClosed,
-      new Promise((resolve) => setTimeout(() => resolve(null), 1000))
-    ]);
-    if (outcome === 'closed') {
-      return outcome;
-    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   }
-
-  const error = new Error('Login was not completed within 5 minutes.');
-  error.code = 'AUTH_LOGIN_TIMEOUT';
-  error.hint = 'Complete login in the opened browser window and retry the connection.';
-  throw error;
+  throw new CliError('AUTH_LOGIN_TIMEOUT', 'Login was not completed within the time limit.', {
+    hint: 'Rerun `njau-cli auth login` and finish the login in the opened window.'
+  });
 }
 
-async function readAuthPage(page) {
-  return {
-    url: page.url(),
-    title: await page.title().catch(() => ''),
-    text: await page.locator('body').innerText({ timeout: 10000 }).catch(() => '')
-  };
-}
-
-function emitAuthUrl(url) {
-  if (/^https:\/\//i.test(url)) {
-    process.stderr.write(`Complete login at ${url}\n`);
-  }
-}
-
-export async function logoutBrowserProfile() {
+export async function logout() {
   const profilePath = getProfilePath();
-  const profileExists = existsSync(profilePath);
-
+  const profileExisted = existsSync(profilePath);
   try {
     await rm(profilePath, { recursive: true, force: true });
   } catch (cause) {
-    const error = new Error('Unable to clear the SZU browser login profile.');
-    error.code = 'AUTH_LOGOUT_FAILED';
-    error.hint = 'Close any szu-cli browser window and retry `szu-cli auth logout`.';
-    error.cause = cause;
-    throw error;
+    throw new CliError('AUTH_LOGOUT_FAILED', 'Unable to clear the njau-cli browser profile.', {
+      hint: 'Close any njau-cli browser window and retry `njau-cli auth logout`.',
+      cause
+    });
   }
-
-  return {
-    loggedOut: true,
-    profileExisted: profileExists,
-    profilePath
-  };
+  return { loggedOut: true, profileExisted, profilePath };
 }
 
-export async function getAuthStatus(options = {}) {
-  const profilePath = getProfilePath({ persist: false });
+export async function status(options = {}) {
+  const profilePath = getProfilePath();
   const profileExists = existsSync(profilePath);
-
-  if (process.env.SZU_BROWSER_BACKEND === 'mock') {
-    const mockStatus = getMockAuthStatus(profileExists);
-    return withLoginHint({
-      ...mockStatus,
-      profilePath,
-      checkedUrl: DEFAULT_AUTH_CHECK_URL,
-      finalUrl: process.env.SZU_MOCK_AUTH_URL ?? DEFAULT_AUTH_CHECK_URL,
-      backend: 'mock'
-    });
+  if (isMockBackend()) {
+    const loggedIn = !/^(?:1|true)$/i.test(process.env.NJAU_MOCK_LOGGED_OUT ?? '') && profileExists !== false;
+    return withHint({ loggedIn, reason: 'mock', profileExists, profilePath });
   }
-
   if (!profileExists) {
-    return withLoginHint({
-      loggedIn: false,
-      reason: 'profile-missing',
-      profileExists,
-      profilePath
-    });
+    return withHint({ loggedIn: false, reason: 'profile-missing', profileExists, profilePath });
   }
 
-  const checked = await checkAuthWithBrowser({
-    url: options.url ?? DEFAULT_AUTH_CHECK_URL,
-    headless: options.headless ?? true,
-    profilePath
-  });
-
-  return withLoginHint({
-    ...checked,
-    profileExists,
-    profilePath,
-    checkedUrl: options.url ?? DEFAULT_AUTH_CHECK_URL,
-    backend: 'playwright'
+  return withSession(async (session) => {
+    const state = await session.open(options.url ?? PORTAL_URL, { allowLogin: true, settle: 5000 });
+    const result = classifyAuthPage(state);
+    let szjw = null;
+    if (result.loggedIn && options.deep) {
+      szjw = await session.open(WARMUP_URLS[0], { allowLogin: true })
+        .then((page) => ({ ok: !isCasUrl(page.url), finalUrl: page.url }))
+        .catch((error) => ({ ok: false, error: error.code ?? error.message }));
+    }
+    return withHint({ ...result, profileExists, profilePath, finalUrl: state.url, ...(szjw ? { szjw } : {}) });
   });
 }
 
-async function checkAuthWithBrowser(options) {
-  assertBrowserAvailable({ persist: false });
-  const { chromium } = await importPlaywright();
-  const context = await chromium.launchPersistentContext(
-    options.profilePath,
-    getLaunchOptions({ headless: options.headless, persist: false })
-  );
-
-  try {
-    const page = context.pages()[0] ?? await context.newPage();
-    await page.goto(options.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    const pageState = {
-      url: page.url(),
-      title: await page.title(),
-      text: await page.locator('body').innerText({ timeout: 10000 }).catch(() => '')
-    };
-    return {
-      ...classifyAuthPage(pageState),
-      finalUrl: pageState.url
-    };
-  } finally {
-    await context.close();
-  }
-}
-
-async function importPlaywright() {
-  try {
-    return await import('playwright');
-  } catch {
-    const error = new Error('Playwright is not installed. Run `npm install` after dependencies are added.');
-    error.code = 'BACKEND_UNAVAILABLE';
-    throw error;
-  }
-}
-
-function withLoginHint(status) {
-  return status.loggedIn ? status : {
-    ...status,
-    hint: LOGIN_HINT
+function withHint(result) {
+  return result.loggedIn ? result : {
+    ...result,
+    hint: 'Run `njau-cli auth login` and complete the NJAU unified login in the opened browser.'
   };
-}
-
-function getMockAuthStatus(profileExists) {
-  const configuredProfileExists = readMockBoolean('SZU_MOCK_AUTH_PROFILE_EXISTS');
-  const configuredLoggedIn = readMockBoolean('SZU_MOCK_AUTH_LOGGED_IN');
-  const effectiveProfileExists = configuredProfileExists ?? profileExists;
-
-  if (configuredLoggedIn === true && effectiveProfileExists === false) {
-    const error = new Error('Mock auth state cannot be logged in when profileExists is false.');
-    error.code = 'MOCK_AUTH_STATE_INVALID';
-    throw error;
-  }
-
-  if (!effectiveProfileExists) {
-    return {
-      loggedIn: false,
-      reason: 'profile-missing',
-      profileExists: effectiveProfileExists
-    };
-  }
-
-  if (configuredLoggedIn !== null) {
-    return {
-      loggedIn: configuredLoggedIn,
-      reason: configuredLoggedIn ? 'mock-configured' : 'mock-configured-logged-out',
-      profileExists: effectiveProfileExists,
-      authSource: 'fixture'
-    };
-  }
-
-  return {
-    ...classifyAuthPage({
-      url: process.env.SZU_MOCK_AUTH_URL ?? DEFAULT_AUTH_CHECK_URL,
-      title: process.env.SZU_MOCK_AUTH_TITLE ?? '',
-      text: process.env.SZU_MOCK_AUTH_TEXT ?? ''
-    }),
-    profileExists: effectiveProfileExists
-  };
-}
-
-function readMockBoolean(name) {
-  const value = process.env[name];
-  if (value === undefined) {
-    return null;
-  }
-
-  if (/^(?:1|true|yes)$/i.test(value)) {
-    return true;
-  }
-
-  if (/^(?:0|false|no)$/i.test(value)) {
-    return false;
-  }
-
-  const error = new Error(`${name} must be true or false.`);
-  error.code = 'MOCK_AUTH_CONFIG_INVALID';
-  throw error;
 }
